@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestion des Soldes Utilisateurs</title>
+    
+    <!-- Bibliothèques Firebase -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.9.0/firebase-app-compat.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.9.0/firebase-database-compat.min.js"></script>
+    
+    <style>
+        /* Styles réactifs et modernes */
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            width: 90%;
+            max-width: 1200px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .search-form, .edit-form {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        input {
+            padding: 8px;
+            flex-grow: 1;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .disabled-user {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .success {
+            color: green;
+        }
+        .error {
+            color: red;
+        }
+        button {
+            padding: 8px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Gestion des Soldes Utilisateurs</h1>
+        
+        <!-- Section de recherche -->
+        <div class="search-form">
+            <input 
+                type="text" 
+                id="searchInput" 
+                placeholder="Rechercher par email" 
+                onkeyup="filterUsers()"
+            >
+        </div>
+
+        <!-- Formulaire d'édition -->
+        <div class="edit-form">
+            <h3>Modifier le solde</h3>
+            <input type="text" id="userIdInput" placeholder="Email Utilisateur">
+            <input type="number" id="balanceInput" placeholder="Nouveau solde">
+            <button onclick="updateBalance()">Mettre à jour</button>
+            <button onclick="toggleUserStatus()">Désactiver/Activer</button>
+        </div>
+
+        <!-- Zone de messages -->
+        <div id="message"></div>
+        
+        <!-- Tableau des utilisateurs -->
+        <table>
+            <thead>
+                <tr>
+                    <th>Email</th>
+                    <th>Solde</th>
+                    <th>Statut</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="userTable">
+                <!-- Les utilisateurs seront ajoutés dynamiquement ici -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        // Configuration Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyCekNaQs88vn7Ed2IIO_fIrc3kk2lVfggM",
+            authDomain: "uber-10bff.firebaseapp.com",
+            databaseURL: "https://uber-10bff-default-rtdb.firebaseio.com",
+            projectId: "uber-10bff",
+            storageBucket: "uber-10bff.firestorage.app",
+            messagingSenderId: "997089945771",
+            appId: "1:997089945771:web:55496eb4fb702eabce2fee"
+        };
+
+        // Initialisation Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        // Fonction pour charger les utilisateurs
+        function loadUsers() {
+            const usersRef = database.ref('users');
+            usersRef.on('value', (snapshot) => {
+                const userTable = document.getElementById('userTable');
+                userTable.innerHTML = '';
+                
+                snapshot.forEach((userSnapshot) => {
+                    const userData = userSnapshot.val();
+                    const userId = userSnapshot.key;
+                    
+                    if (userData.email) {
+                        const row = document.createElement('tr');
+                        row.classList.toggle('disabled-user', userData.isDisabled);
+                        row.innerHTML = `
+                            <td>${userData.email}</td>
+                            <td>${userData.balance || 0}</td>
+                            <td>${userData.isDisabled ? 'Désactivé' : 'Actif'}</td>
+                            <td>
+                                <button onclick="prepareEdit('${userData.email}', ${userData.balance || 0})">
+                                    Modifier
+                                </button>
+                            </td>
+                        `;
+                        userTable.appendChild(row);
+                    }
+                });
+            });
+        }
+
+        // Filtrer les utilisateurs par email
+        function filterUsers() {
+            const searchInput = document.getElementById('searchInput').value.toLowerCase();
+            const rows = document.getElementById('userTable').getElementsByTagName('tr');
+            
+            for (let row of rows) {
+                const emailCell = row.getElementsByTagName('td')[0];
+                if (emailCell) {
+                    const emailText = emailCell.textContent || emailCell.innerText;
+                    row.style.display = emailText.toLowerCase().includes(searchInput) ? '' : 'none';
+                }
+            }
+        }
+
+        // Préparer la modification
+        function prepareEdit(email, currentBalance) {
+            document.getElementById('userIdInput').value = email;
+            document.getElementById('balanceInput').value = currentBalance;
+        }
+
+        // Mettre à jour le solde
+        function updateBalance() {
+            const userEmail = document.getElementById('userIdInput').value;
+            const newBalance = parseFloat(document.getElementById('balanceInput').value);
+            const messageDiv = document.getElementById('message');
+
+            if (!userEmail || isNaN(newBalance)) {
+                messageDiv.innerHTML = '<p class="error">Veuillez remplir tous les champs correctement.</p>';
+                return;
+            }
+
+            database.ref('users').orderByChild('email').equalTo(userEmail).once('value')
+                .then((snapshot) => {
+                    if (snapshot.exists()) {
+                        const userId = Object.keys(snapshot.val())[0];
+                        return database.ref(`users/${userId}`).update({
+                            balance: newBalance
+                        });
+                    } else {
+                        throw new Error("Utilisateur non trouvé");
+                    }
+                })
+                .then(() => {
+                    messageDiv.innerHTML = '<p class="success">Solde mis à jour avec succès!</p>';
+                    setTimeout(() => {
+                        messageDiv.innerHTML = '';
+                    }, 3000);
+                })
+                .catch((error) => {
+                    messageDiv.innerHTML = `<p class="error">Erreur: ${error.message}</p>`;
+                });
+        }
+
+        // Désactiver/Activer un utilisateur
+        function toggleUserStatus() {
+            const userEmail = document.getElementById('userIdInput').value;
+            const messageDiv = document.getElementById('message');
+
+            if (!userEmail) {
+                messageDiv.innerHTML = '<p class="error">Veuillez saisir un email.</p>';
+                return;
+            }
+
+            database.ref('users').orderByChild('email').equalTo(userEmail).once('value')
+                .then((snapshot) => {
+                    if (snapshot.exists()) {
+                        const userId = Object.keys(snapshot.val())[0];
+                        const userData = snapshot.val()[userId];
+                        
+                        // Inverser le statut de désactivation
+                        return database.ref(`users/${userId}`).update({
+                            isDisabled: !userData.isDisabled
+                        });
+                    } else {
+                        throw new Error("Utilisateur non trouvé");
+                    }
+                })
+                .then(() => {
+                    messageDiv.innerHTML = '<p class="success">Statut de l\'utilisateur mis à jour!</p>';
+                    setTimeout(() => {
+                        messageDiv.innerHTML = '';
+                    }, 3000);
+                })
+                .catch((error) => {
+                    messageDiv.innerHTML = `<p class="error">Erreur: ${error.message}</p>`;
+                });
+        }
+
+        // Charger les utilisateurs au démarrage
+        loadUsers();
+    </script>
+</body>
+</html>
